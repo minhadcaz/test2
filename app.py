@@ -78,20 +78,26 @@ def main():
         backends = ["mock", "huggingface"]
         config["model"]["backend"] = st.selectbox("Backend", backends, index=backends.index(config["model"]["backend"]))
         config["model"]["model_id"] = st.text_input("Model ID", config["model"]["model_id"])
-        config["model"]["device"] = st.selectbox("Thiết bị", ["auto", "cpu", "cuda"])
-        config["model"]["quantization"] = st.selectbox("Quantization", ["none", "4bit", "8bit"])
+        devices, quantizations = ["auto", "cpu", "cuda"], ["none", "4bit", "8bit"]
+        config["model"]["device"] = st.selectbox("Thiết bị", devices, index=devices.index(config["model"]["device"]))
+        config["model"]["quantization"] = st.selectbox(
+            "Quantization", quantizations, index=quantizations.index(str(config["model"]["quantization"])))
         modes = ["adaptive_sc", "greedy", "fixed_sc"]
         config["sampling"]["mode"] = st.selectbox("Phương pháp", modes, index=modes.index(config["sampling"]["mode"]))
-        config["sampling"]["fixed_k"] = st.number_input("K cố định", 1, 32, 8)
-        rounds = st.text_input("Ứng viên mỗi vòng", "4,4,8,16")
-        config["generation"]["temperature"] = st.slider("Temperature", 0.0, 1.5, 0.7, 0.05)
-        config["generation"]["top_p"] = st.slider("Top p", 0.05, 1.0, 0.9, 0.05)
-        config["generation"]["max_new_tokens"] = st.number_input("Max new tokens", 32, 4096, 512, 32)
+        # Sidebar defaults come from config.yaml so editing the file takes effect in the UI.
+        sample, gen = config["sampling"], config["generation"]
+        sample["fixed_k"] = st.number_input("K cố định", 1, 32, sample["fixed_k"])
+        rounds = st.text_input("Ứng viên mỗi vòng", ",".join(map(str, sample["rounds"])))
+        gen["temperature"] = st.slider("Temperature", 0.0, 1.5, float(gen["temperature"]), 0.05)
+        gen["top_p"] = st.slider("Top p", 0.05, 1.0, float(gen["top_p"]), 0.05)
+        gen["max_new_tokens"] = st.number_input("Max new tokens", 32, 4096, gen["max_new_tokens"], 32)
         config["generation"]["batch_size"] = st.number_input("Batch size", 1, 8, config["generation"]["batch_size"])
         config["validation"]["schema_selection"] = st.checkbox("Chọn schema theo câu hỏi")
         config["correction"]["enabled"] = st.checkbox("Sửa lỗi thực thi", value=True)
-        config["sampling"]["confidence_threshold"] = st.slider("Ngưỡng đồng thuận", 0.5, 1.0, 0.75, 0.05)
-        config["sampling"]["time_budget_seconds"] = st.number_input("Ngân sách thời gian (giây)", 5, 1800, 120)
+        sample["confidence_threshold"] = st.slider(
+            "Ngưỡng đồng thuận", 0.5, 1.0, float(sample["confidence_threshold"]), 0.05)
+        sample["time_budget_seconds"] = st.number_input(
+            "Ngân sách thời gian (giây)", 5, 1800, int(sample["time_budget_seconds"]))
     if config["model"]["backend"] == "mock":
         st.info("Chế độ mock: chọn câu hỏi mẫu để xem cách hoạt động. Kết quả không đo năng lực AI.")
     source = st.radio("Database", ["Dữ liệu sinh viên mẫu", "Tải SQLite lên"], horizontal=True)

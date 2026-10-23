@@ -141,6 +141,12 @@ class HFModelBackend(ModelBackend):
                         ), generation_ms=elapsed, generation_parameters=dict(parameters),
                     ))
             except RuntimeError as error:
+                if "out of memory" in str(error).lower() and batch_size > 1:
+                    # Batching is what makes self-consistency affordable; shrink it before giving up.
+                    self.torch.cuda.empty_cache()
+                    batch_size = max(1, size // 2)
+                    LOGGER.warning("CUDA hết bộ nhớ với batch %d; giảm còn %d.", size, batch_size)
+                    continue
                 message = "CUDA hết bộ nhớ; giảm batch/max_new_tokens hoặc chọn CPU." if (
                     "out of memory" in str(error).lower()
                 ) else "Model generation thất bại; kiểm tra cấu hình và dependencies."

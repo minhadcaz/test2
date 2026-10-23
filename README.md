@@ -80,6 +80,9 @@ adaptive-slm-sql/
   evaluation/
     metrics.py                evaluate.py
     run_ablation.py           plot_results.py
+    run_sweep.py              plot_sweep.py
+    sweep_report.py
+  docs/results/               biểu đồ và sweep.csv của mục Số liệu kết quả
   scripts/
     download_model.py         smoke_test.py
     run_demo.bat              import_bird.py
@@ -251,6 +254,50 @@ Khi không có mẫu, các rate trả 0. Model load được đo riêng. Cần w
 Chuẩn hóa bảo toàn dòng trùng, số cột, kiểu NULL/text/bytes. Số nguyên 1 và số thực 1.0 được coi bằng nhau; số thực khác biệt vẫn khác, không dùng tolerance rộng. EX theo thứ tự gold nếu gold có ORDER BY/LIMIT; nếu không thì so multiset. Voting giữ thứ tự theo từng SQL ứng viên có ORDER BY/LIMIT. Đây là evaluator local đơn giản, không thay thế evaluator chính thức của BIRD/Spider. LIMIT không ORDER BY có thể không xác định; nên tránh trong gold tự viết.
 
 Giới hạn UI là 200 dòng, nhưng vote/EX dùng toàn bộ kết quả trong giới hạn 50.000 dòng/8 MiB. Vượt giới hạn thì đánh dấu thất bại, không so hai prefix bị cắt ngắn. Gold lỗi/vượt giới hạn làm evaluation dừng để người dùng điều chỉnh, tránh báo điểm sai.
+
+### Số liệu kết quả: greedy, fixed-K và adaptive (SLM-SQL-1.5B, 100 câu)
+
+Chạy ngày 22–23/10/2026 trên RTX 2050 4 GB, model `cycloneboy/SLM-SQL-1.5B` (BF16), `data/evaluation_questions.json` (26 easy, 39 medium, 35 hard), database sinh viên mẫu, seed 42.
+
+Cách đo: mỗi câu sinh **một lần** gồm 1 ứng viên greedy (temperature 0) và một pool 16 ứng viên sampling (temperature 0.7, top-p 0.9, batch 4); mỗi ứng viên được validate, thực thi và so với gold. Sau đó mọi cấu hình được mô phỏng lại trên cùng pool bằng chính `decide`, `group_candidates`, `rank_candidates` của pipeline, nên các phương pháp so trên cùng mẫu. CI95 lấy từ 200 hoán vị bootstrap thứ tự ứng viên trong pool. Correction tắt để tách riêng tác dụng của sampling và luật dừng. Độ trễ là **ước tính**: số batch đã bắt đầu × thời gian đo trung bình của một batch (57,1 s); greedy đo trực tiếp (47,5 s/câu, chưa gồm load model).
+
+```powershell
+python -m evaluation.run_sweep all --batch-size 4 --output results/sweep-1.5b-20261022
+python -m evaluation.plot_sweep results/sweep-1.5b-20261022/sweep.csv
+python -m evaluation.sweep_report results/sweep-1.5b-20261022
+```
+
+Pool: 90,3% ứng viên chạy được, 45,8% đúng, trung bình 4,14 kết quả thực thi khác nhau mỗi câu. Bảng đầy đủ 36 cấu hình: [docs/results/sweep.csv](docs/results/sweep.csv).
+
+| Cấu hình | EX % [CI95] | Ứng viên TB | Độ trễ ước tính (s) | Dừng sớm % | Easy % | Medium % | Hard % |
+|---|---|---|---|---|---|---|---|
+| Greedy | 43.0 | 1.00 | 47.5 | – | 80.8 | 48.7 | 8.6 |
+| Fixed K=1 | 45.6 [40.0–51.0] | 1.00 | 57.1 | – | 77.2 | 51.1 | 15.9 |
+| Fixed K=2 | 46.7 [42.0–52.0] | 2.00 | 57.1 | – | 83.4 | 50.4 | 15.5 |
+| Fixed K=4 | 51.2 [46.0–56.0] | 4.00 | 57.1 | – | 86.5 | 58.1 | 17.3 |
+| Fixed K=8 | 54.2 [50.0–59.0] | 8.00 | 114.2 | – | 87.9 | 63.1 | 19.2 |
+| Fixed K=16 | 55.0 | 16.00 | 228.4 | – | 88.5 | 64.1 | 20.0 |
+| Adaptive 4-4-8, τ=0.5, min_valid=2 | 54.2 [50.0–58.0] | 6.51 | 96.4 | 81.1 | 86.9 | 64.2 | 18.6 |
+| Adaptive 2-2-4-8, τ=0.5, min_valid=2 | 54.1 [50.0–58.0] | 5.49 | 128.1 | 81.8 | 86.8 | 64.2 | 18.6 |
+| Adaptive 4-4-8, τ=0.75, min_valid=2 | 54.7 [52.0–57.0] | 9.27 | 138.1 | 57.3 | 88.5 | 64.1 | 19.3 |
+| Adaptive 4-4-8, τ=0.75, min_valid=4 | 54.8 [53.0–57.0] | 9.71 | 145.0 | 55.4 | 88.7 | 63.9 | 19.4 |
+| Adaptive 4-4-8, τ=0.9, min_valid=4 | 55.0 [54.0–55.0] | 12.28 | 181.3 | 32.3 | 88.4 | 64.1 | 19.9 |
+| Oracle pass@16 (giới hạn trên) | 88.0 | 16.00 | 228.4 | – | 100.0 | 94.9 | 71.4 |
+
+Greedy và K=16 không có CI vì kết quả không phụ thuộc thứ tự pool. Lịch `4-4-8-16` cho kết quả trùng `4-4-8` vì pool chỉ có 16 ứng viên; τ=0.9 và τ=1.0 cũng trùng nhau.
+
+![Độ chính xác theo số ứng viên](docs/results/sweep_candidates.png)
+
+![Độ chính xác theo độ trễ ước tính](docs/results/sweep_latency.png)
+
+Nhận xét:
+
+- Self-consistency có ích: K=16 đạt 55,0% so với greedy 43,0% (+12 điểm), tăng nhiều nhất ở medium (+15,4) và hard (+11,4).
+- Adaptive 4-4-8, τ=0.5 đạt 54,2% với 6,5 ứng viên/câu: bằng K=8 nhưng ít hơn 19% ứng viên và ~16% độ trễ; so với K=16 chỉ thấp 0,8 điểm nhưng dùng ít hơn 59% ứng viên và ~58% độ trễ. 81% câu dừng sớm.
+- Tăng τ chỉ thêm tối đa 0,8 điểm nhưng gần gấp đôi số ứng viên. Đường adaptive gần như nằm trên đường fixed-K; lợi thế chủ yếu là chi phí, không phải độ chính xác.
+- Lịch nhỏ `2-2-4-8` tiết kiệm ứng viên nhất (5,5) nhưng chậm hơn `4-4-8` khi batch 4, vì vòng 2 ứng viên vẫn tốn trọn một batch.
+- Khoảng cách tới oracle (88% so với 55%) là điểm nghẽn chính: 44/100 câu có ứng viên đúng nhưng là thiểu số trong pool, nên bỏ phiếu đa số chọn sai; 12/100 câu không có ứng viên đúng nào. Câu hard là yếu nhất (≤20%).
+- Giới hạn: 100 câu tự soạn trên một database, một seed, correction tắt, độ trễ là ước tính. Câu hỏi có thể đã được xem khi chỉnh prompt, nên đây không phải tập đánh giá mù; cần thêm Spider/BIRD và nhiều seed trước khi đưa vào bài báo.
 
 ## 10. Config
 

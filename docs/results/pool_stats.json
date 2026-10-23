@@ -1,0 +1,8 @@
+{
+  "questions": 100,
+  "pool_valid_rate": 0.903125,
+  "pool_correct_rate": 0.458125,
+  "avg_distinct_results": 4.14,
+  "greedy_avg_s": 47.53243503199977,
+  "batch_avg_s": 57.098108432750024
+}

@@ -10,7 +10,7 @@ generation:
   temperature: 0.7
   top_p: 0.9
   max_new_tokens: 512
-  batch_size: 1
+  batch_size: 4
   max_input_tokens: 7000
 sampling:
   mode: greedy
@@ -20,7 +20,7 @@ sampling:
   confidence_threshold: 0.75
   margin_threshold: 0.25
   max_candidates: 32
-  time_budget_seconds: 120
+  time_budget_seconds: 900
 validation:
   schema: true
   schema_selection: false
