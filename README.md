@@ -2,6 +2,8 @@
 
 **Mới clone repo?** Xem [SETUP.md — cài đặt, tải model và chạy từ đầu](SETUP.md).
 
+**Đánh giá schema pruning với mô hình gốc:** xem [hướng dẫn A–Z: full vs pruning, metric và biểu đồ](docs/EVALUATION_A_TO_Z.md), hoặc chạy [notebook Kaggle](notebooks/kaggle_schema_pruning_bird.ipynb). Có script so sánh theo từng câu, CI, latency/token/VRAM và biểu đồ retrieval từ Mini-Dev thực đo.
+
 Ứng dụng local chuyển câu hỏi tiếng Việt/tiếng Anh thành SQL trên SQLite. Pipeline đọc schema, sinh SQL, kiểm tra, thực thi và chọn ứng viên dựa trên kết quả. Có giao diện Streamlit và CLI thực nghiệm.
 
 **Chạy nhanh trên máy hiện tại:** mở `scripts/run_demo.bat`. Môi trường `.venv` đã được tạo trong project. Mặc định dùng **huggingface**, model **SLM-SQL-1.5B**, thiết bị **auto** (ưu tiên GPU) và phương pháp **greedy**. Nhập câu hỏi tiếng Việt/tiếng Anh → **Generate SQL**, hoặc chọn câu hỏi mẫu → **Dùng câu hỏi mẫu** → **Generate SQL**. Lần đầu bấm sẽ tải model vào bộ nhớ; các câu sau dùng lại model. Có thể chuyển sang `adaptive_sc` để thử nhiều ứng viên, thời gian chạy sẽ tăng.

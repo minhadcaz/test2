@@ -1,0 +1,7 @@
+{
+  "dataset_sha256": "926af2a0d1b47e5d0d15a7aa8a34d4721007f4550a881555b6a89496b54a2606",
+  "schemas_sha256": "5176e324a72e80a8a37a12285596d123e0ba6c310dceaa9f13a1e413ee88ff5b",
+  "questions": 500,
+  "token_scope": "raw build_prompt text, excluding model chat template",
+  "note": "Schema coverage is not model execution accuracy. CPU timings are observational, not a controlled speedup test."
+}

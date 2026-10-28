@@ -2,6 +2,8 @@
 
 Ngày thực nghiệm: **28/10/2026**. Mục tiêu là giảm schema đưa vào SLM nhưng giữ đủ thông tin để sinh SQL. Tính năng đã tích hợp vào pipeline hiện có; mặc định `schema_selection: false` được giữ vì kết quả BM25 chưa đủ tin cậy để bật cho mọi câu hỏi.
 
+Hướng dẫn đánh giá chi tiết: [A–Z so sánh cùng model với full/pruned schema, metric, CI và plot](EVALUATION_A_TO_Z.md). Notebook đã có cell tạo comparison CSV/PNG/PDF và gọi EX chính thức.
+
 ## 1. Kết luận khả thi
 
 Có thể triển khai bước retrieval trước generator trong dự án hiện tại. BM25 chạy CPU, không cần vector database hoặc API trả phí. Dense/hybrid dùng `sentence-transformers`, cosine trên ma trận vector chuẩn hóa, reciprocal-rank fusion (RRF) và cache theo fingerprint của schema/model/revision. Trong 11 DB của Mini-Dev, tập schema nhỏ nên triển khai ma trận local giúp tái lập đơn giản; dịch vụ vector database phù hợp hơn khi có nhiều database/phiên bản, cần cập nhật index, metadata filtering hoặc phục vụ đồng thời. Đây là lựa chọn kiến trúc, chưa phải benchmark so sánh vector database.
