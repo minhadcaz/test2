@@ -1,0 +1,4 @@
+# Optional semantic retrieval. BM25 uses only the Python standard library.
+# Install a PyTorch build suited to the Kaggle accelerator first.
+sentence-transformers==3.4.1
+numpy>=1.26,<3

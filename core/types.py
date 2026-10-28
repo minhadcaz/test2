@@ -72,6 +72,7 @@ class PipelineResult:
     explanation: str
     correction_attempts: int = 0
     correction_successes: int = 0
+    schema_retrieval: dict = field(default_factory=dict)
 
     def public_dict(self) -> dict:
         return {
@@ -82,4 +83,5 @@ class PipelineResult:
             "elapsed_ms": self.elapsed_ms, "explanation": self.explanation,
             "correction_attempts": self.correction_attempts,
             "correction_successes": self.correction_successes,
+            "schema_retrieval": self.schema_retrieval,
         }

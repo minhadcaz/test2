@@ -10,6 +10,7 @@ Correction is disabled to isolate the effect of sampling and stopping.
 import argparse
 from copy import deepcopy
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -53,10 +54,20 @@ def _record(candidate, gold, gold_sql) -> dict:
 
 
 def collect(args, config):
-    items = json.loads(args.dataset.read_text(encoding="utf-8"))[: args.limit]
+    dataset = args.dataset.resolve()
+    items = json.loads(dataset.read_text(encoding="utf-8"))[: args.limit]
     if args.db.resolve() == DEFAULT_DB.resolve():
         create_database()
     out = args.output / "pool.jsonl"
+    # A resumed pool must have the same data, retrieval and generation settings.
+    config["correction"]["enabled"] = False
+    manifest = {"dataset_sha256": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+                "config": config, "pool": args.pool, "batch_size": args.batch_size,
+                "default_database": str(args.db.resolve()), "collector_version": 2}
+    manifest_path = args.output / "collection_manifest.json"
+    if out.exists() and out.stat().st_size:
+        if not manifest_path.exists() or json.loads(manifest_path.read_text()) != manifest:
+            raise ValueError("Candidate pool settings differ; use a new output directory")
     done = set()
     if out.exists():
         done = {json.loads(line)["id"] for line in out.read_text(encoding="utf-8").splitlines() if line}
@@ -67,13 +78,22 @@ def collect(args, config):
     schema_inspector = SchemaInspector(**config["schema"])
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     with out.open("a", encoding="utf-8") as handle:
         for index, item in enumerate(items, 1):
             if item["id"] in done:
                 continue
-            database = args.db
+            database = (dataset.parent / item["db_path"]).resolve() if item.get("db_path") else args.db
             gold = executor.execute(database, item["gold_sql"])
-            prompt = build_prompt(item["question"], schema_inspector.inspect(database), item.get("evidence", ""))
+            if not gold.success:
+                raise ValueError(f"Gold SQL failed for {item['id']}: {gold.error}")
+            schema = schema_inspector.inspect(database)
+            if config["validation"]["schema_selection"]:
+                schema = pipeline.schema_selector.select(item["question"], schema, item.get("evidence", ""))
+                retrieval = dict(pipeline.schema_selector.last_metadata)
+            else:
+                retrieval = {"mode": "full", "latency_ms": 0.0}
+            prompt = build_prompt(item["question"], schema, item.get("evidence", ""))
             greedy_params = dict(config["generation"], temperature=0.0)
             sample_params = dict(config["generation"], batch_size=args.batch_size)
             backend.start_request(config["seed"])
@@ -93,8 +113,9 @@ def collect(args, config):
                 pipeline._check(candidate, database)
             row = {"id": item["id"], "difficulty": item.get("difficulty"), "question": item["question"],
                    "gold_sql": item["gold_sql"], "greedy_ms": greedy_ms, "batch_ms": batch_ms,
-                   "batch_size": args.batch_size,
-                   "greedy": _record(greedy[0], gold, item["gold_sql"]),
+                   "batch_size": args.batch_size, "db_id": item.get("db_id"),
+                   "db_path": str(database), "schema_retrieval": retrieval,
+                   "greedy": _record(greedy[0] if greedy else Candidate(0, error="No generation"), gold, item["gold_sql"]),
                    "pool": [_record(c, gold, item["gold_sql"]) for c in pool]}
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             handle.flush()

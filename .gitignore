@@ -10,3 +10,6 @@ results/*
 !results/.gitkeep
 !results/verification.md
 data/benchmarks/
+data/bird_minidev/
+artifacts/
+.ipynb_checkpoints/

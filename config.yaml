@@ -24,6 +24,18 @@ sampling:
 validation:
   schema: true
   schema_selection: false
+# Enable validation.schema_selection to activate this retriever.
+retrieval:
+  mode: bm25  # bm25 (CPU), dense, hybrid
+  top_k_tables: 8
+  top_k_columns: 48  # soft budget: PK/FK and explicit mentions are preserved
+  max_bridge_tables: 2
+  fallback: full
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  embedding_revision: null
+  device: cpu
+  local_files_only: true
+  cache_dir: .cache/schema_embeddings
 execution:
   timeout_seconds: 3
   max_steps: 2000000

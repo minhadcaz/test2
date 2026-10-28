@@ -94,6 +94,7 @@ class HFModelBackend(ModelBackend):
     def start_request(self, seed: int) -> None:
         from transformers import set_seed
         set_seed(seed)
+        self.request_metrics = {"calls": [], "oom_retries": 0}
 
     def generate(self, prompt: str, n: int, parameters: dict,
                  deadline: float | None = None) -> list[Candidate]:
@@ -108,8 +109,14 @@ class HFModelBackend(ModelBackend):
         ) if self.tokenizer.chat_template else prompt
         inputs = self.tokenizer(text, return_tensors="pt", add_special_tokens=False)
         input_length = inputs["input_ids"].shape[-1]
+        call_metrics = {"input_tokens": int(input_length), "output_tokens": 0,
+                        "sequences": 0, "generation_ms": 0.0, "context_overflow": False}
+        if not hasattr(self, "request_metrics"):
+            self.request_metrics = {"calls": [], "oom_retries": 0}
+        self.request_metrics["calls"].append(call_metrics)
         context = getattr(self.model.config, "max_position_embeddings", 32768)
         if input_length > parameters["max_input_tokens"] or input_length + parameters["max_new_tokens"] > context:
+            call_metrics["context_overflow"] = True
             return [Candidate(0, error="Prompt vượt context; giảm row samples hoặc chọn schema.")]
         inputs = inputs.to(self.model.device)
         candidates = []
@@ -133,16 +140,29 @@ class HFModelBackend(ModelBackend):
             try:
                 with self.lock, self.torch.inference_mode():
                     output = self.model.generate(**inputs, **kwargs)
-                elapsed = (time.perf_counter() - start) * 1000 / size
+                # Include completed CUDA work in the generation wall time.
+                if self.torch.cuda.is_available() and self.model.device.type == "cuda":
+                    self.torch.cuda.synchronize(self.model.device)
+                batch_ms = (time.perf_counter() - start) * 1000
+                call_metrics["generation_ms"] += batch_ms
+                elapsed = batch_ms / size
+                eos = self.model.generation_config.eos_token_id
+                eos_ids = set(eos if isinstance(eos, list) else [eos]) if eos is not None else set()
                 for sequence in output:
+                    generated = sequence[input_length:].tolist()
+                    token_count = next((i + 1 for i, token in enumerate(generated) if token in eos_ids), len(generated))
+                    call_metrics["output_tokens"] += token_count
+                    call_metrics["sequences"] += 1
                     candidates.append(Candidate(
                         len(candidates), raw_text=self.tokenizer.decode(
                             sequence[input_length:], skip_special_tokens=True
-                        ), generation_ms=elapsed, generation_parameters=dict(parameters),
+                        ), generation_ms=elapsed, generation_parameters={**parameters,
+                            "input_tokens": int(input_length), "output_tokens": token_count},
                     ))
             except RuntimeError as error:
                 if "out of memory" in str(error).lower() and batch_size > 1:
                     # Batching is what makes self-consistency affordable; shrink it before giving up.
+                    self.request_metrics["oom_retries"] += 1
                     self.torch.cuda.empty_cache()
                     batch_size = max(1, size // 2)
                     LOGGER.warning("CUDA hết bộ nhớ với batch %d; giảm còn %d.", size, batch_size)

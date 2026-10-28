@@ -45,3 +45,20 @@ def validate_config(config: dict) -> None:
         raise ValueError("Device không hợp lệ.")
     if str(config["model"]["quantization"]) not in {"none", "4bit", "8bit"}:
         raise ValueError("Quantization không hợp lệ.")
+
+    retrieval = config.get("retrieval", {})
+    allowed = {"mode", "top_k_tables", "top_k_columns", "max_bridge_tables", "fallback",
+               "embedding_model", "embedding_revision", "cache_dir", "local_files_only", "device"}
+    if set(retrieval) - allowed:
+        raise ValueError(f"Unknown retrieval options: {sorted(set(retrieval) - allowed)}")
+    if retrieval.get("mode", "bm25") not in {"bm25", "dense", "hybrid"}:
+        raise ValueError("retrieval.mode must be bm25, dense, or hybrid")
+    for key in ("top_k_tables", "top_k_columns"):
+        value = retrieval.get(key, 8 if key == "top_k_tables" else 48)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"retrieval.{key} must be a positive integer")
+    bridges = retrieval.get("max_bridge_tables", 2)
+    if isinstance(bridges, bool) or not isinstance(bridges, int) or bridges < 0:
+        raise ValueError("retrieval.max_bridge_tables must be a nonnegative integer")
+    if retrieval.get("fallback", "full") not in {"full", "top_k"}:
+        raise ValueError("retrieval.fallback must be full or top_k")

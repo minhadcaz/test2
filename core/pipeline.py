@@ -30,6 +30,7 @@ class Pipeline:
         self.correction_backend = correction_backend or self.backend
         self.validator = SQLValidator()
         self.executor = SQLExecutor(config["execution"])
+        self.schema_selector = SchemaSelector(**config.get("retrieval", {}))
 
     def _check(self, candidate, db_path):
         if candidate.error:
@@ -53,9 +54,15 @@ class Pipeline:
         sample = self.config["sampling"]
         deadline = start + sample["time_budget_seconds"]
         schema = SchemaInspector(**self.config["schema"]).inspect(db_path)
-        selected_schema = SchemaSelector().select(question, schema) if (
-            self.config["validation"]["schema_selection"]
-        ) else schema
+        if self.config["validation"]["schema_selection"]:
+            selected_schema = self.schema_selector.select(question, schema, evidence)
+            retrieval_metadata = dict(self.schema_selector.last_metadata)
+        else:
+            selected_schema = schema
+            retrieval_metadata = {"mode": "full", "latency_ms": 0.0,
+                                  "full_tables": len(schema), "selected_tables": len(schema),
+                                  "full_columns": sum(len(t["columns"]) for t in schema.values()),
+                                  "selected_columns": sum(len(t["columns"]) for t in schema.values())}
         prompt = build_prompt(question, selected_schema, evidence)
         self.backend.start_request(self.config["seed"])
         if self.correction_backend is not self.backend:
@@ -91,7 +98,7 @@ class Pipeline:
                         break
                     previous = candidate.public_dict()
                     repaired = correct_candidate(self.correction_backend, candidate, question,
-                                                 schema, evidence, parameters, deadline)
+                                                 selected_schema, evidence, parameters, deadline)
                     if repaired is None:
                         break
                     attempts += 1
@@ -132,5 +139,10 @@ class Pipeline:
         ) if selected else "Không có SQL thực thi thành công trong ngân sách hiện tại."
         LOGGER.info("backend=%s mode=%s candidates=%d reason=%s", self.backend.name, mode,
                     len(candidates), decision.reason)
-        return PipelineResult(question, self.backend.name, mode, candidates, selected, decision,
-                              trace, (time.perf_counter() - start) * 1000, explanation, attempts, successes)
+        result = PipelineResult(question, self.backend.name, mode, candidates, selected, decision,
+                                trace, (time.perf_counter() - start) * 1000, explanation, attempts, successes)
+        result.schema_retrieval = {**retrieval_metadata, "prompt_characters": len(prompt)}
+        metrics = getattr(self.backend, "request_metrics", None)
+        if metrics is not None:
+            result.schema_retrieval["generation"] = deepcopy(metrics)
+        return result

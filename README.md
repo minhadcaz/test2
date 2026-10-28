@@ -374,7 +374,7 @@ Image mặc định mock/CPU, không có PyTorch. Để dùng model thật cần
 
 Chưa có kết quả chứng minh tốt hơn paper. Dataset sinh viên nhỏ và một schema không đo khái quát hóa qua nhiều miền. Mock không phải AI. Các trọng số/threshold cần tuning trên tập riêng. SQL chạy được không bảo đảm đúng nghiệp vụ; trường hợp mọi query cùng trả rỗng dễ tạo đồng thuận sai.
 
-Tiếp theo có thể đánh giá BIRD Mini-Dev, dùng nhiều seed, kiểm định paired theo câu hỏi, mở rộng dữ liệu tiếng Việt được rà soát, chọn schema bằng retrieval, thêm merge CSC thực sự và đo chi phí token. Fine-tuning là dự án thực nghiệm riêng, cần train/dev/test không rò rỉ.
+Đã bổ sung schema retrieval BM25/dense/hybrid và thử nghiệm retrieval trên đủ 500 câu BIRD Mini-Dev chính thức; xem hướng dẫn bên dưới. Chưa đo EX của model thật trên BIRD. Tiếp theo cần đánh giá nhiều seed, kiểm định paired theo câu hỏi, mở rộng dữ liệu tiếng Việt được rà soát và thêm merge CSC thực sự. Fine-tuning là dự án thực nghiệm riêng, cần train/dev/test không rò rỉ.
 
 Ứng dụng dành cho máy local, không cung cấp authentication hoặc sandbox tiến trình đủ cho dịch vụ công khai. Upload luôn được ghi vào tên file tạm do ứng dụng tạo rồi mở read-only; file gốc không bị sửa. Không gửi câu hỏi/database tới API ngoài. Hugging Face chỉ được truy cập khi tải/kiểm tra cache model; đặt local_files_only sau khi tải nếu cần offline. Streamlit telemetry đã tắt.
 
@@ -385,3 +385,23 @@ Tiếp theo có thể đánh giá BIRD Mini-Dev, dùng nhiều seed, kiểm đ�
 - [Model card 0.5B](https://huggingface.co/cycloneboy/SLM-SQL-0.5B) ghi **CC-BY-NC-4.0**. License repository không thay thế license weights; kiểm tra model card của từng model khi đổi ID.
 - Dữ liệu sinh viên và 200 câu hỏi được tự tạo cho project, không lấy thông tin sinh viên thật hoặc sao chép benchmark. Chưa gán license phát hành riêng cho source/dataset tự tạo.
 - Khi dùng BIRD/Spider, giữ provenance và tuân thủ điều khoản từ nguồn tải. Benchmark ngoài không được đóng gói trong project này.
+
+
+## 17. Schema Pruning & Retrieval trên BIRD/Kaggle
+
+Bộ lọc mới chọn bảng/cột theo question + evidence, giữ PK/FK và đường JOIN trong ngân sách, tái sử dụng index và dùng cùng schema cho correction. BM25 chạy CPU; dense/hybrid là dependency tùy chọn trong `requirements-retrieval.txt`.
+
+- [Thiết kế, tính khả thi, kết quả Mini-Dev và hướng dẫn Kaggle](docs/SCHEMA_PRUNING_BIRD_KAGGLE.md).
+- [Notebook Kaggle](notebooks/kaggle_schema_pruning_bird.ipynb): retrieval 500 câu, so sánh full/BM25/hybrid, ghi token/latency/peak CUDA memory khi chạy model.
+- [Kết quả retrieval và provenance tokenizer](docs/bird_minidev_retrieval_results.json).
+
+```bash
+python scripts/download_bird_minidev.py
+python -m evaluation.evaluate_schema_retrieval \
+  --data data/bird_minidev/mini_dev_sqlite.jsonl \
+  --schemas data/bird_minidev/schemas.json \
+  --mode bm25 --top-k-tables 8 --top-k-columns 48 \
+  --output results/bird_retrieval
+```
+
+Để dùng trong app/pipeline, bật `validation.schema_selection` và chọn `retrieval.mode`. Tính năng được giữ tắt mặc định: pruning mạnh có thể mất cột/bảng cần thiết; kết quả retrieval không thay thế execution accuracy. Metadata/dataset được tải riêng, ghim revision và kiểm tra hash; không đóng gói SQLite trong source.
